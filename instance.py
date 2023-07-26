@@ -125,16 +125,19 @@ def addInstance(output_max):
 
 def addInstanceCounts(output_max):
 
-    instances_counter = Counter()
-
+    instance_dictionary = {}
+    
+    instance_dictionary = {}
+    for i in range(NUM_CLASSES):
+                instance_dictionary[str(i)] = 0
+    
     # for each segment, draw its legend
     for segment in output_max[0]['segments_info']:
         segment_id = segment['id']
-        segment_label_id = segment['label_id']
-        segment_label = model.config.id2label[segment_label_id]
-        instances_counter[segment_label] += 1
+        segment_label_id = str(segment['label_id'])
+        instance_dictionary[segment_label_id] += 1
 
-    return dict(instances_counter)
+    return instance_dictionary
 
 # Load Mask2Former
 processor = AutoImageProcessor.from_pretrained("facebook/mask2former-swin-large-mapillary-vistas-panoptic")
