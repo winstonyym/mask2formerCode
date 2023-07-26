@@ -163,8 +163,8 @@ def main():
     image_instances_dict = {}
 
     # Create output folder if none exist
-    if not os.path.exists(f'./outputs'):
-        os.makedirs(f'./outputs')
+    if not os.path.exists(f'./instance_outputs'):
+        os.makedirs(f'./instance_outputs')
 
     # Get list of images
     image_set = [i for i in os.listdir(os.path.join(os.getcwd(),args.input_path))]
@@ -190,8 +190,8 @@ def main():
             df = df.rename(mapper = CLS_DICT, axis=1)
             df2 = pd.DataFrame.from_dict(image_instances_dict, orient='index')
             df2 = df2.rename(mapper = CLS_DICT, axis=1)
-            df.to_csv(os.path.join(os.getcwd(),f'outputs/{start}-{i}_output.csv'), index = True, header=True)
-            df2.to_csv(os.path.join(os.getcwd(),f'outputs/{start}-{i}_instances.csv'), index = True, header=True)
+            df.to_csv(os.path.join(os.getcwd(),f'instance_outputs/{start}-{i}_output.csv'), index = True, header=True)
+            df2.to_csv(os.path.join(os.getcwd(),f'instance_outputs/{start}-{i}_instances.csv'), index = True, header=True)
             start = i
             image_indicators_dict = {}
             image_instances_dict = {}
@@ -200,11 +200,11 @@ def main():
         
     df = pd.DataFrame.from_dict(image_indicators_dict, orient='index')
     df = df.rename(mapper = CLS_DICT, axis=1)
-    df.to_csv(os.path.join(os.getcwd(),f'outputs/{start}-{len(image_set)}_output.csv'), index = True, header=True)
+    df.to_csv(os.path.join(os.getcwd(),f'instance_outputs/{start}-{len(image_set)}_output.csv'), index = True, header=True)
     
     df2 = pd.DataFrame.from_dict(image_instances_dict, orient='index')
     df2 = df2.rename(mapper = CLS_DICT, axis=1)
-    df2.to_csv(os.path.join(os.getcwd(),f'outputs/{start}-{len(image_set)}_instances.csv'), index = True, header=True)
+    df2.to_csv(os.path.join(os.getcwd(),f'instance_outputs/{start}-{len(image_set)}_instances.csv'), index = True, header=True)
     logger.info(f"Saved CSV checkpoint for images {start}:{len(image_set)}")
         
         
