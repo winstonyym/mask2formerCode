@@ -18,7 +18,6 @@ import warnings
 import time
 from tqdm import tqdm
 from collections import Counter
-from torch.cuda import OutOfMemoryError
 
 # setting device on GPU if available, else CPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -174,30 +173,19 @@ def main():
     image_set = [i for i in os.listdir(os.path.join(os.getcwd(),args.input_path))]
 
     for i, image in enumerate(tqdm(image_set)):
-        print(f'Segmenting {i}: {image}')
+        
+        print(f'Segmenting {image}')
         img = Image.open(os.path.join(os.getcwd(),args.input_path, f'{image}'))
         inputs = processor(images=img, return_tensors="pt")
         with torch.no_grad():
             pixel_values = inputs['pixel_values'].to(device)
             pixel_mask = inputs['pixel_mask'].to(device)
             outputs = model(pixel_values = pixel_values, pixel_mask = pixel_mask)
-        try:
-            out = processor.post_process_instance_segmentation(outputs, target_sizes=[img.size[::-1]], threshold=args.threshold)
-            image_indicators_dict[image] = addInstance(out)
-            image_instances_dict[image] = addInstanceCounts(out)
-            logger.info(f"Segmented {i}:{image}")
-        except OutOfMemoryError:
-            outputs['class_queries_logits'] = outputs['class_queries_logits'].to('cpu')
-            outputs['masks_queries_logits'] = outputs['masks_queries_logits'].to('cpu')
-            outputs['encoder_last_hidden_state'] = outputs['encoder_last_hidden_state'].to('cpu')
-            outputs['pixel_decoder_last_hidden_state'] = outputs['pixel_decoder_last_hidden_state'].to('cpu')
-            outputs['transformer_decoder_last_hidden_state'] = outputs['transformer_decoder_last_hidden_state'].to('cpu')
-            out = processor.post_process_instance_segmentation(outputs, target_sizes=[img.size[::-1]], threshold=args.threshold)
-            image_indicators_dict[image] = addInstance(out)
-            image_instances_dict[image] = addInstanceCounts(out)
-            logger.info(f"Segmented with CPU due to large image {i}:{image}")
-        except:
-            logger.info(f"Failed for {i}:{image}") 
+        out = processor.post_process_instance_segmentation(outputs, target_sizes=[img.size[::-1]], threshold=args.threshold)
+        image_indicators_dict[image] = addInstance(out)
+        image_instances_dict[image] = addInstanceCounts(out)
+        logger.info(f"Segmented {i}:{image}")
+
     
         if i != 0 and i % 10000 == 0:
             df = pd.DataFrame.from_dict(image_indicators_dict, orient='index')

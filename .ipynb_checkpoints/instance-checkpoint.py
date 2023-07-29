@@ -18,6 +18,7 @@ import warnings
 import time
 from tqdm import tqdm
 from collections import Counter
+from torch.cuda import OutOfMemoryError
 
 # setting device on GPU if available, else CPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -100,7 +101,7 @@ def addIndice(output_max):
     return set_dictionary
 
 def addInstance(output_max):
-    list_unique, list_counts = torch.unique(out[0]['segmentation'].int(), return_counts=True)
+    list_unique, list_counts = torch.unique(output_max[0]['segmentation'].int(), return_counts=True)
 
     if -1 in list_unique:
         list_unique = list_unique[1:]
@@ -109,7 +110,7 @@ def addInstance(output_max):
     total = torch.sum(list_counts).item()
 
     matching_dict = {}
-    for i, k in zip(range(len(out[0]['segments_info'])), out[0]['segments_info']):
+    for i, k in zip(range(len(output_max[0]['segments_info'])), output_max[0]['segments_info']):
         matching_dict[i] = int(k['label_id'])
 
     set_dictionary = {}
@@ -125,16 +126,19 @@ def addInstance(output_max):
 
 def addInstanceCounts(output_max):
 
-    instances_counter = Counter()
-
+    instance_dictionary = {}
+    
+    instance_dictionary = {}
+    for i in range(NUM_CLASSES):
+                instance_dictionary[str(i)] = 0
+    
     # for each segment, draw its legend
-    for segment in out[0]['segments_info']:
+    for segment in output_max[0]['segments_info']:
         segment_id = segment['id']
-        segment_label_id = segment['label_id']
-        segment_label = model.config.id2label[segment_label_id]
-        instances_counter[segment_label] += 1
+        segment_label_id = str(segment['label_id'])
+        instance_dictionary[segment_label_id] += 1
 
-    return dict(instances_counter)
+    return instance_dictionary
 
 # Load Mask2Former
 processor = AutoImageProcessor.from_pretrained("facebook/mask2former-swin-large-mapillary-vistas-panoptic")
@@ -160,27 +164,38 @@ def main():
     # Set start state
     start = 0
     image_indicators_dict = {}
+    image_instances_dict = {}
 
     # Create output folder if none exist
-    if not os.path.exists(f'./outputs'):
-        os.makedirs(f'./outputs')
+    if not os.path.exists(f'./instance_outputs'):
+        os.makedirs(f'./instance_outputs')
 
     # Get list of images
     image_set = [i for i in os.listdir(os.path.join(os.getcwd(),args.input_path))]
 
     for i, image in enumerate(tqdm(image_set)):
+        print(f'Segmenting {i}: {image}')
+        img = Image.open(os.path.join(os.getcwd(),args.input_path, f'{image}'))
+        inputs = processor(images=img, return_tensors="pt")
+        with torch.no_grad():
+            pixel_values = inputs['pixel_values'].to(device)
+            pixel_mask = inputs['pixel_mask'].to(device)
+            outputs = model(pixel_values = pixel_values, pixel_mask = pixel_mask)
         try:
-            print(f'Segmenting {image}')
-            img = Image.open(os.path.join(os.getcwd(),args.input_path, f'{image}'))
-            inputs = processor(images=img, return_tensors="pt")
-            with torch.no_grad():
-                pixel_values = inputs['pixel_values'].to(device)
-                pixel_mask = inputs['pixel_mask'].to(device)
-                outputs = model(pixel_values = pixel_values, pixel_mask = pixel_mask)
             out = processor.post_process_instance_segmentation(outputs, target_sizes=[img.size[::-1]], threshold=args.threshold)
             image_indicators_dict[image] = addInstance(out)
             image_instances_dict[image] = addInstanceCounts(out)
             logger.info(f"Segmented {i}:{image}")
+        except OutOfMemoryError:
+            outputs['class_queries_logits'] = outputs['class_queries_logits'].to('cpu')
+            outputs['masks_queries_logits'] = outputs['masks_queries_logits'].to('cpu')
+            outputs['encoder_last_hidden_state'] = outputs['encoder_last_hidden_state'].to('cpu')
+            outputs['pixel_decoder_last_hidden_state'] = outputs['pixel_decoder_last_hidden_state'].to('cpu')
+            outputs['transformer_decoder_last_hidden_state'] = outputs['transformer_decoder_last_hidden_state'].to('cpu')
+            out = processor.post_process_instance_segmentation(outputs, target_sizes=[img.size[::-1]], threshold=args.threshold)
+            image_indicators_dict[image] = addInstance(out)
+            image_instances_dict[image] = addInstanceCounts(out)
+            logger.info(f"Segmented with CPU due to large image {i}:{image}")
         except:
             logger.info(f"Failed for {i}:{image}") 
     
@@ -189,8 +204,8 @@ def main():
             df = df.rename(mapper = CLS_DICT, axis=1)
             df2 = pd.DataFrame.from_dict(image_instances_dict, orient='index')
             df2 = df2.rename(mapper = CLS_DICT, axis=1)
-            df.to_csv(os.path.join(os.getcwd(),f'outputs/{start}-{i}_output.csv'), index = True, header=True)
-            df2.to_csv(os.path.join(os.getcwd(),f'outputs/{start}-{i}_instances.csv'), index = True, header=True)
+            df.to_csv(os.path.join(os.getcwd(),f'instance_outputs/{start}-{i}_output.csv'), index = True, header=True)
+            df2.to_csv(os.path.join(os.getcwd(),f'instance_outputs/{start}-{i}_instances.csv'), index = True, header=True)
             start = i
             image_indicators_dict = {}
             image_instances_dict = {}
@@ -199,11 +214,11 @@ def main():
         
     df = pd.DataFrame.from_dict(image_indicators_dict, orient='index')
     df = df.rename(mapper = CLS_DICT, axis=1)
-    df.to_csv(os.path.join(os.getcwd(),f'outputs/{start}-{len(image_set)}_output.csv'), index = True, header=True)
+    df.to_csv(os.path.join(os.getcwd(),f'instance_outputs/{start}-{len(image_set)}_output.csv'), index = True, header=True)
     
     df2 = pd.DataFrame.from_dict(image_instances_dict, orient='index')
     df2 = df2.rename(mapper = CLS_DICT, axis=1)
-    df2.to_csv(os.path.join(os.getcwd(),f'outputs/{start}-{len(image_set)}_instances.csv'), index = True, header=True)
+    df2.to_csv(os.path.join(os.getcwd(),f'instance_outputs/{start}-{len(image_set)}_instances.csv'), index = True, header=True)
     logger.info(f"Saved CSV checkpoint for images {start}:{len(image_set)}")
         
         
